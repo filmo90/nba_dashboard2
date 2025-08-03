@@ -2,20 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>NBA Dashboard</title>
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    body {
-      font-family: sans-serif;
-      padding: 20px;
-      text-align: center;
-    }
-    .chart-container {
-      max-width: 600px;
-      margin: 40px auto;
-    }
+    body { font-family: Arial; margin: 40px; text-align: center; }
+    .chart-container { max-width: 600px; margin: 30px auto; }
   </style>
 </head>
 <body>
@@ -23,13 +15,13 @@
   <div id="charts"></div>
 
   <script>
-    const sheetUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTj0HrHnc0DMHVAXc0x_9-w-T1fjOxKXGgMtmCx3b2kC0kJZNn76zIegHoTc9RpMonfSwUxm2zIzgav/pub?output=csv';
+    const sheetCsvUrl = "https://docs.google.com/spreadsheets/d/1pnvVn_Tv8gO7BYCjZHqkbxN8k8hz6KlGpu7srAPdZSo/gviz/tq?tqx=out:csv";
 
-    Papa.parse(sheetUrl, {
+    Papa.parse(sheetCsvUrl, {
       download: true,
       header: true,
       complete: function(results) {
-        const data = results.data.filter(row => row.Player && row.Date && row.PTS);
+        const data = results.data.filter(row => row.Player && row.PTS && row.Date);
         const players = [...new Set(data.map(row => row.Player))];
 
         players.forEach(player => {
@@ -41,7 +33,6 @@
 
           const canvas = document.createElement("canvas");
           canvas.height = 200;
-          canvas.width = 600;
           const container = document.createElement("div");
           container.className = "chart-container";
           container.appendChild(canvas);
@@ -55,7 +46,7 @@
                 {
                   label: `${player} PTS`,
                   data: points,
-                  backgroundColor: "rgba(75, 192, 192, 0.6)"
+                  backgroundColor: "rgba(54, 162, 235, 0.6)"
                 },
                 {
                   label: "Media",
@@ -70,25 +61,16 @@
             options: {
               responsive: true,
               plugins: {
-                legend: {
-                  display: true
-                }
+                legend: { display: true }
               },
               scales: {
-                y: {
-                  beginAtZero: true
-                }
+                y: { beginAtZero: true }
               }
             }
           });
         });
-      },
-      error: function(err) {
-        console.error("Errore caricamento CSV:", err);
       }
     });
   </script>
 </body>
 </html>
-
-
