@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dashboard NBA - Punti Giocatori</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    margin: 20px;
+    background: #fafafa;
+    color: #222;
+  }
+  header {
+    text-align: center;
+    margin-bottom: 30px;
+  }
+  header img {
+    height: 70px;
+    vertical-align: middle;
+  }
+  header h1 {
+    display: inline-block;
+    margin-left: 15px;
+    vertical-align: middle;
+    font-weight: 700;
+    color: #1d428a; /* NBA blue */
+  }
+  #filters {
+    margin-bottom: 20px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    justify-content: center;
+  }
+  #team-filter label {
+    margin-right: 10px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .player-chart {
+    margin-bottom: 40px;
+    max-width: 700px;
+    margin-left: auto;
+    margin-right: auto;
+    background: #fff;
+    padding: 15px 20px 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 7px rgb(0 0 0 / 0.1);
+  }
+  .player-chart h3 {
+    text-align: center;
+    margin-bottom: 8px;
+    color: #1d428a;
+  }
+  canvas {
+    width: 100% !important;
+    height: 280px !important;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <img src="nba_logo.png" alt="NBA Logo" />
+  <h1>Dashboard Punti Giocatori NBA</h1>
+</header>
+
+<div id="filters">
+  <div id="team-filter">
+    <strong>Filtra per Squadre:</strong><br />
+    <div id="team-checkboxes"></div>
+  </div>
+</div>
+
+<div id="charts-container"></div>
+
+<script>
+let tuttiIDatiCSV = [];
+let listaSquadreUniche = [];
+
+function creaCheckboxSquadre(squadre) {
+  const container = document.getElementById('team-checkboxes');
+  container.innerHTML = '';
+  squadre.forEach(team => {
+    const label = document.createElement('label');
+    label.style.marginRight = "12px";
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.value = team;
+    checkbox.checked = true;
+
+    label.appendChild(checkbox);
+    label.appendChild(document.createTextNode(' ' + team));
+    container.appendChild(label);
+  });
+}
+
+function getSquadreSelezionate() {
+  const checkboxes = document.querySelectorAll('#team-checkboxes input[type=checkbox]');
+  return Array.from(checkboxes)
+    .filter(chk => chk.checked)
+    .map(chk => chk.value);
+}
+
+function filtraPerSquadre(dati, squadreSelezionate) {
+  return dati.filter(d => squadreSelezionate.includes(d.Team));
+}
+
+function calcolaMediaPTS(dati) {
+  const mapPunti = {};
+  dati.forEach(row => {
+    const p = Number(row.PTS);
+    if (!mapPunti[row.Player]) mapPunti[row.Player] = { sum: 0, count: 0, ptsList: [] };
+    mapPunti[row.Player].sum += p;
+    mapPunti[row.Player].count += 1;
+    mapPunti[row.Player].ptsList.push(p);
+  });
+  const media = {};
+  const devStd = {};
+  for (const p in mapPunti) {
+    media[p] = mapPunti[p].sum / mapPunti[p].count;
+    // calcolo deviazione standard
+    const mean = media[p];
+    const sqDiff = mapPunti[p].ptsList.map(x => (x - mean) ** 2);
+    const avgSqDiff = sqDiff.reduce((a,b) => a + b, 0) / mapPunti[p].count;
+    devStd[p] = Math.sqrt(avgSqDiff);
+  }
+  return { media, devStd };
+}
+
+function contaSopraSottoMedia(dati, mediaPTS, lastN=7) {
+  const map = {};
+  const datiPerPlayer = {};
+  dati.forEach(d => {
+    if (!datiPerPlayer[d.Player]) datiPerPlayer[d.Player] = [];
+    datiPerPlayer[d.Player].push(d);
+  });
+  for (const p in datiPerPlayer) {
+    datiPerPlayer[p].sort((a,b) => new Date(b.Date) - new Date(a.Date));
+  }
+  for (const p in datiPerPlayer) {
+    const ultime = datiPerPlayer[p].slice(0, lastN);
+    let sopra = 0;
+    let sotto = 0;
+    ultime.forEach(r => {
+      const pts = Number(r.PTS);
+      if (pts > mediaPTS[p]) sopra++;
+      else if (pts < mediaPTS[p]) sotto++;
+    });
+    map[p] = { sopra, sotto };
+  }
+  return map;
+}
+
+function ordinaGiocatori(dati, mediaPTS, contaSopraSotto) {
+  const giocatori = [...new Set(dati.map(d => d.Player))];
+  giocatori.sort((a,b) => {
+    const aMax = Math.max(contaSopraSotto[a]?.sopra || 0, contaSopraSotto[a]?.sotto || 0);
+    const bMax = Math.max(contaSopraSotto[b]?.sopra || 0, contaSopraSotto[b]?.sotto || 0);
+    return bMax - aMax;
+  });
+  return giocatori;
+}
+
+function generaGrafici(dati) {
+  const container = document.getElementById('charts-container');
+  container.innerHTML = '';
+
+  const {media: mediaPTS, devStd} = calcolaMediaPTS(dati);
+  const contaSopraSotto = contaSopraSottoMedia(dati, mediaPTS, 7);
+  const giocatoriOrdinati = ordinaGiocatori(dati, mediaPTS, contaSopraSotto);
+
+  giocatoriOrdinati.forEach(player => {
+    const datiGiocatore = dati.filter(d => d.Player === player);
+    datiGiocatore.sort((a,b) => new Date(a.Date) - new Date(b.Date));
+
+    const labels = datiGiocatore.map(d => d.Date);
+    const pts = datiGiocatore.map(d => Number(d.PTS));
+    const media = mediaPTS[player] || 0;
+    const mediaArr = new Array(pts.length).fill(media);
+    const deviazione = devStd[player] ? devStd[player].toFixed(2) : "N/A";
+    const squadra = datiGiocatore.length > 0 ? datiGiocatore[0].Team : "Sconosciuta";
+
+    const div = document.createElement('div');
+    div.className = 'player-chart';
+    div.innerHTML = `<h3>${player} - <em>${squadra}</em> &nbsp;&nbsp;|&nbsp;&nbsp; Dev. Std: <strong>${deviazione}</strong></h3><canvas id="chart-${player.replace(/\s+/g, '')}"></canvas>`;
+    container.appendChild(div);
+
+    const ctx = document.getElementById(`chart-${player.replace(/\s+/g, '')}`).getContext('2d');
+    new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: 'Punti',
+            data: pts,
+            backgroundColor: 'rgba(30, 144, 255, 0.7)',
+          },
+          {
+            label: 'Media punti',
+            data: mediaArr,
+            type: 'line',
+            borderColor: 'red',
+            borderWidth: 2,
+            fill: false,
+            pointRadius: 0,
+            tension: 0.1,
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { position: 'top' }
+        },
+        scales: {
+          x: {
+            ticks: { maxRotation: 60, minRotation: 30 },
+            title: { display: true, text: 'Data partita' }
+          },
+          y: {
+            beginAtZero: true,
+            title: { display: true, text: 'Punti' }
+          }
+        }
+      }
+    });
+  });
+}
+
+function filtraEGenera() {
+  const squadreSelezionate = getSquadreSelezionate();
+  let datiFiltrati = filtraPerSquadre(tuttiIDatiCSV, squadreSelezionate);
+  generaGrafici(datiFiltrati);
+}
+
+Papa.parse('https://docs.google.com/spreadsheets/d/e/2PACX-1vSDr3fe2p8Q5_DWJYjRt3E44bcdW_icTLgCbcnWWSSbKb7p6H0bcVMiaw9ZUx-s2urFSNf5WeBOnZQ3/pub?gid=0&single=true&output=csv', {
+  download: true,
+  header: true,
+  complete: function(results) {
+    tuttiIDatiCSV = results.data.filter(d => d.Player && d.Date && d.PTS && d.Team);
+    listaSquadreUniche = [...new Set(tuttiIDatiCSV.map(d => d.Team))].sort();
+    creaCheckboxSquadre(listaSquadreUniche);
+    filtraEGenera();
+
+    document.getElementById('team-checkboxes').addEventListener('change', filtraEGenera);
+  },
+  error: function(err) {
+    console.error('Errore caricamento CSV:', err);
+  }
+});
+</script>
+</body>
+</html>
